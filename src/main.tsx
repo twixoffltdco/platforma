@@ -4,11 +4,14 @@ import { RouterProvider } from 'react-router-dom'
 import './index.css'
 import { router } from './router'
 import { AppearanceProvider } from './context/appearance'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AppearanceProvider>
-      <RouterProvider router={router} />
-    </AppearanceProvider>
+    <AppErrorBoundary>
+      <AppearanceProvider>
+        <RouterProvider router={router} />
+      </AppearanceProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 )
