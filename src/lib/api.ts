@@ -4,101 +4,156 @@ export interface Video {
   thumbnail: string;
   author: string;
   authorAvatar: string;
-  views: string;
+  views: number;
   postedAt: string;
   duration: string;
   category: string;
   description: string;
   embedUrl: string;
+  channelId?: string;
+  tags: string[];
 }
 
-// Список заблокированных "мусорных" каналов (можно дополнять)
-const BLACKLISTED_CHANNELS = ['Мусор1', 'СпамКанал', 'LowQualityContent'];
+const CHANNELS_API = 'https://aqeleulwobgamdffkfri.supabase.co/functions/v1/public-channels';
+const EMBED_BASE = 'https://embesslivestudio.lovable.app';
+
+const ALLOWED_CHANNEL_NAMES = ['oinktech', 'twixoff', 'твканалы', 'тв канал', 'tvkanaly'];
+const BLOCKED_PATTERNS = [
+  'spam',
+  'мусор',
+  'casino',
+  'казино',
+  'scam',
+  'накрутка',
+  '18+',
+  'xxx',
+  'shorts farm',
+];
+
+interface ApiItem {
+  [key: string]: unknown;
+}
+
+const toString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return fallback;
+};
+
+const toNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^\d.]/g, ''));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+};
+
+const extractArray = <T>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  return [];
+};
+
+const normalizeDuration = (raw: string): string => {
+  if (!raw) return 'LIVE';
+  return raw;
+};
+
+const normalizeRelativeDate = (raw: string): string => {
+  if (!raw) return 'сейчас';
+  return raw;
+};
+
+const toEmbedUrl = (item: ApiItem): string => {
+  const direct = toString(item.embed_url ?? item.embedUrl);
+  if (direct) {
+    try {
+      const parsed = new URL(direct);
+      if (parsed.hostname.includes('embesslivestudio')) {
+        return `${EMBED_BASE}${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      // ignore invalid URL and fallback to id-based URL
+    }
+  }
+
+  const embedId = toString(item.embed_id ?? item.embedId ?? item.id);
+  return `${EMBED_BASE}/embed/${encodeURIComponent(embedId)}`;
+};
+
+const shouldKeepChannel = (name: string): boolean => {
+  const normalized = name.toLowerCase().trim();
+  if (!normalized) return false;
+
+  if (ALLOWED_CHANNEL_NAMES.some((allowed) => normalized.includes(allowed))) {
+    return true;
+  }
+
+  return !BLOCKED_PATTERNS.some((pattern) => normalized.includes(pattern));
+};
+
+const parseItem = (item: ApiItem, index: number): Video | null => {
+  const author = toString(item.channel_name ?? item.author ?? item.channel ?? item.user_name);
+  if (!shouldKeepChannel(author)) {
+    return null;
+  }
+
+  const id = toString(item.id ?? item.video_id ?? item.stream_id, `video-${index}`);
+  const tags = extractArray<string>(item.tags).map((tag) => toString(tag)).filter(Boolean);
+
+  return {
+    id,
+    title: toString(item.title ?? item.name, 'Без названия'),
+    thumbnail: toString(item.thumbnail_url ?? item.thumbnail ?? item.preview ?? item.poster, `${EMBED_BASE}/placeholder.jpg`),
+    author,
+    authorAvatar: toString(item.avatar_url ?? item.authorAvatar ?? item.channel_avatar, `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(author || id)}`),
+    views: toNumber(item.views ?? item.view_count ?? item.watchers),
+    postedAt: normalizeRelativeDate(toString(item.posted_at ?? item.created_at ?? item.published_at)),
+    duration: normalizeDuration(toString(item.duration ?? item.length ?? item.status)),
+    category: toString(item.category ?? item.genre ?? item.type, 'Другое'),
+    description: toString(item.description ?? item.summary, 'Описание недоступно.'),
+    embedUrl: toEmbedUrl(item),
+    channelId: toString(item.channel_id ?? item.author_id),
+    tags,
+  };
+};
+
+const unwrapItems = (payload: unknown): ApiItem[] => {
+  if (Array.isArray(payload)) return payload as ApiItem[];
+  if (payload && typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>;
+    const candidates = [obj.data, obj.channels, obj.videos, obj.items, obj.results];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate as ApiItem[];
+      }
+    }
+  }
+  return [];
+};
 
 export const fetchVideos = async (): Promise<Video[]> => {
-  // Имитируем запрос к API StreamLiveTV
-  // В реальном сценарии здесь будет fetch('https://embesslivestudio.vercel.app/api/videos')
-  const mockVideos: Video[] = [
-    {
-      id: '1',
-      title: 'Прямой эфир: Главные новости технологий',
-      thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80',
-      author: 'StreamLive Tech',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=tech',
-      views: '1.2M',
-      postedAt: '2 часа назад',
-      duration: '10:45',
-      category: 'Технологии',
-      description: 'Обзор последних новинок мира IT и будущего нейросетей.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/1'
+  const response = await fetch(CHANNELS_API, {
+    headers: {
+      Accept: 'application/json',
     },
-    {
-      id: '2',
-      title: 'Музыкальный микс 2024 - Лучшее для работы',
-      thumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&q=80',
-      author: 'Music Station',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=music',
-      views: '850K',
-      postedAt: '5 часов назад',
-      duration: '1:20:00',
-      category: 'Музыка',
-      description: 'Расслабляющая музыка для продуктивности и концентрации.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/2'
-    },
-    {
-      id: '3',
-      title: 'Как создать свою студию стриминга',
-      thumbnail: 'https://images.unsplash.com/photo-1492619375914-88005aa9e8fb?w=800&q=80',
-      author: 'StreamLiveTV Guides',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=guides',
-      views: '45K',
-      postedAt: '1 день назад',
-      duration: '15:20',
-      category: 'Обучение',
-      description: 'Пошаговое руководство по настройке оборудования для профессионального стриминга.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/3'
-    },
-    {
-      id: '4',
-      title: 'Спортивный обзор: Финалы сезона',
-      thumbnail: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?w=800&q=80',
-      author: 'Sports Center',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=sports',
-      views: '230K',
-      postedAt: '3 дня назад',
-      duration: '08:12',
-      category: 'Спорт',
-      description: 'Все голы и лучшие моменты финальных матчей.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/4'
-    },
-    {
-      id: '5',
-      title: 'Путешествие в горы: Невероятные виды',
-      thumbnail: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
-      author: 'Travel Vlog',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=travel',
-      views: '15K',
-      postedAt: '12 часов назад',
-      duration: '22:10',
-      category: 'Развлечения',
-      description: 'Сегодня мы отправляемся в самое сердце Альп.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/5'
-    },
-    {
-      id: '6',
-      title: 'Уроки React: Hooks от А до Я',
-      thumbnail: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800&q=80',
-      author: 'Code Master',
-      authorAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=code',
-      views: '92K',
-      postedAt: '1 неделю назад',
-      duration: '45:30',
-      category: 'Обучение',
-      description: 'Глубокое погружение в React Hooks для продвинутых разработчиков.',
-      embedUrl: 'https://embesslivestudio.lovable.app/embed/6'
-    }
-  ];
+  });
 
-  // Фильтруем "мусорные" каналы
-  return mockVideos.filter(video => !BLACKLISTED_CHANNELS.includes(video.author));
+  if (!response.ok) {
+    throw new Error(`Ошибка загрузки каналов: HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const items = unwrapItems(payload);
+
+  return items
+    .map((item, idx) => parseItem(item, idx))
+    .filter((item): item is Video => Boolean(item));
+};
+
+export const formatViews = (views: number): string => {
+  if (views >= 1_000_000_000) return `${(views / 1_000_000_000).toFixed(1)}B`;
+  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M`;
+  if (views >= 1_000) return `${(views / 1_000).toFixed(1)}K`;
+  return `${views}`;
 };

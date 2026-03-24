@@ -60,6 +60,8 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    filter: brightness(var(--app-gamma, 1));
+    transition: filter 0.2s ease;
   }
 }
 
