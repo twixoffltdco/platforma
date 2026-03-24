@@ -10,23 +10,34 @@ const Watch: React.FC = () => {
   const [video, setVideo] = useState<Video | null>(null);
   const [recommendations, setRecommendations] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      const allVideos = await fetchVideos();
-      const currentVideo = allVideos.find((v) => v.id === id) || null;
-      setVideo(currentVideo);
+      setLoadError('');
 
-      const ranked = rankForUser(allVideos.filter((v) => v.id !== id));
-      setRecommendations(ranked.slice(0, 20));
+      try {
+        const allVideos = await fetchVideos();
+        const currentVideo = allVideos.find((v) => v.id === id) || null;
+        setVideo(currentVideo);
 
-      if (currentVideo) {
-        trackWatch(currentVideo);
+        const ranked = rankForUser(allVideos.filter((v) => v.id !== id));
+        setRecommendations(ranked.slice(0, 20));
+
+        if (currentVideo) {
+          trackWatch(currentVideo);
+        }
+      } catch (error) {
+        setVideo(null);
+        setRecommendations([]);
+        setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить видео');
+      } finally {
+        setIsLoading(false);
+        window.scrollTo(0, 0);
       }
-      setIsLoading(false);
-      window.scrollTo(0, 0);
     };
+
     loadData();
   }, [id]);
 
@@ -68,6 +79,7 @@ const Watch: React.FC = () => {
       <Layout>
         <div className="text-center py-20">
           <h2 className="text-2xl font-bold">Видео не найдено</h2>
+          {loadError && <p className="mt-3 text-sm text-red-400">{loadError}</p>}
           <Link to="/" className="text-blue-500 hover:underline mt-4 inline-block">
             Вернуться на главную
           </Link>

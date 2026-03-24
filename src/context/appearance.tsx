@@ -33,7 +33,11 @@ export const AppearanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.style.setProperty('--app-gamma', String(gamma));
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme, gamma }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme, gamma }));
+    } catch {
+      // ignore write errors in restricted/private browsers
+    }
   }, [theme, gamma]);
 
   const value = useMemo(
